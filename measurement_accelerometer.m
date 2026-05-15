@@ -247,31 +247,65 @@ function plot_config_bars(S)
     sgtitle('Cross-config metrics (mean \pm std across trials)');
 end
 
-function plot_config_spectra(S, spectra_all)
-    cfgs = unique(S.config);
-    nc = numel(cfgs);
-    cmap = lines(nc);
 
-    figure('Position',[100 100 1100 700],'Name','Mean |A| spectrum per config');
-    hold on; grid on;
+function plot_config_spectra(S, spectra_all)
+    keep  = ["n0_n0", "n1_n1", "n1_n1_off", "n1_n0"];
+    cfgs  = intersect(unique(S.config), keep, 'stable');
+    % reorder to tell a clean story
+    [~, ord] = ismember(["n0_n0","n1_n1","n1_n1_off","n1_n0"], cfgs);
+    cfgs = cfgs(ord(ord>0));
+    nc    = numel(cfgs);
+    cmap  = lines(nc);
+
+    ncols = 2;
+    nrows = ceil(nc / ncols);
+
+    figure('Name', 'Vibration spectra by config', ...
+           'Position', [100 100 1200 800]);
+
     for i = 1:nc
-        idx = find(S.config == cfgs(i));
-        % interpolate spectra to common grid then average
+        idx   = find(S.config == cfgs(i));
+        if isempty(idx); continue; end
+
+        col   = cmap(i,:);
         f_ref = spectra_all{idx(1)}.Aabs.f;
-        Y_acc = zeros(size(f_ref));
-        cnt = 0;
-        for j = idx(:)'
-            sp = spectra_all{j}.Aabs;
-            Yi = interp1(sp.f, sp.Y, f_ref, 'linear', 0);
-            Y_acc = Y_acc + Yi; cnt = cnt + 1;
+        nf    = numel(f_ref);
+        nt    = numel(idx);
+        Y_mat = zeros(nt, nf);
+
+        for j = 1:nt
+            sp = spectra_all{idx(j)}.Aabs;
+            Y_mat(j,:) = interp1(sp.f, sp.Y, f_ref, 'linear', 0);
         end
-        Y_mean = Y_acc / max(cnt,1);
-        plot(f_ref, Y_mean, 'Color', cmap(i,:), 'LineWidth', 1.4, ...
-            'DisplayName', cfgs(i));
+
+        Y_mean = mean(Y_mat, 1);
+        Y_std  = std(Y_mat, 0, 1);
+
+        subplot(nrows, ncols, i);
+        hold on; grid on;
+
+        for j = 1:nt
+            plot(f_ref, Y_mat(j,:), 'Color', [col 0.35], ...
+                 'LineWidth', 0.8, 'DisplayName', sprintf('trial %d', j));
+        end
+
+        fill([f_ref; flipud(f_ref)], ...
+             [Y_mean + Y_std, fliplr(Y_mean - Y_std)]', ...
+             col, 'FaceAlpha', 0.15, 'EdgeColor', 'none', ...
+             'DisplayName', '\pm 1 std');
+
+        plot(f_ref, Y_mean, 'Color', col, 'LineWidth', 2.5, ...
+             'DisplayName', 'mean');
+
+        xline(mean(S.fdom_Aabs(idx)), '--', 'Color', col*0.6, 'LineWidth', 1.6, ...
+              'DisplayName', sprintf('mean f_{dom} = %.2f Hz', mean(S.fdom_Aabs(idx))));
+
+        xlabel('Frequency (Hz)');
+        ylabel('|A| [mg]');
+        title(sprintf('Config: %s  (%d trials)', strrep(cfgs(i),'_','\_'), nt));
+        legend('Location','northeast');
+        xlim([0, max(S.fs)/2]);
     end
-    set(gca,'XScale','linear');   % switch to 'log' if useful
-    xlabel('Frequency (Hz)'); ylabel('Mean |A| spectrum [mg]');
-    title('Average vibration spectrum by configuration');
-    legend('Interpreter','none','Location','best');
-    xlim([0 max(S.fs)/2]);
+
+    sgtitle('Nozzle geometry effect on vibration (mean \pm std)');
 end
